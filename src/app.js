@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
 const cookieParser = require('cookie-parser');
@@ -15,7 +16,7 @@ app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json());
 app.use(cookieParser());
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 const valid = (req, res, next) => { const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ error: 'Données invalides' }); return next(); };
 const sameSecret = (provided, expected) => { if (!provided || !expected) return false; const a = Buffer.from(provided); const b = Buffer.from(expected); return a.length === b.length && crypto.timingSafeEqual(a, b); };
