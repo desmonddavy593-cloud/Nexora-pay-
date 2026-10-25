@@ -1,0 +1,2 @@
+const request=require('supertest'); const app=require('../src/app');
+describe('API publique',()=>{test('health',async()=>{const r=await request(app).get('/health');expect(r.status).toBe(200);expect(r.body.status).toBe('ok')});test('webhook inconnu refusé',async()=>{const r=await request(app).post('/api/webhooks/ebilling').send({reference:'missing',amount:100});expect([400,422]).toContain(r.status)});});
