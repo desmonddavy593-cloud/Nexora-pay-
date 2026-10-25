@@ -15,3 +15,8 @@
 - [ ] TODO : faire confirmer par Digitech la valeur exacte de `EBILLING_PAID_STATE` et le format de signature webhook éventuel.
 - [ ] TODO : activer SHAP et migrer vers les identifiants/URLs de production après validation Digitech.
 - [ ] TODO : KYC, agréments, textes juridiques et grille tarifaire réelle.
+
+- [x] Statuts E-Billing échoué, expiré et ambigu traités sans crédit ledger ; statut inconnu refusé.
+- [x] Cohérence opérateur vérifiée selon les préfixes locaux 06/07 et opérateur pré-sélectionné dans la recharge.
+- [x] Compteur de connexions appliqué aussi aux emails et solde masqué au chargement initial.
+- [ ] TODO : confirmer auprès de Digitech les quatre valeurs exactes `EBILLING_*_STATE`.

@@ -39,3 +39,9 @@ Connecter `desmonddavy593-cloud/Nexora-pay-` sur `main`, ajouter PostgreSQL, app
 ## État de l'intégration
 
 Les appels OAuth2 E-Billing et SHAP sont isolés dans `src/providers.js`. Aucun succès n'est simulé par l'interface. Les webhooks exigent le secret privé, vérifient la facture auprès d'E-Billing et créditent une seule fois. Les retraits débitent le ledger avant l'appel SHAP et créent une régularisation en cas d'échec. TODO : confirmation du statut payé et éventuel format de signature Digitech, KYC et grille tarifaire réelle.
+
+## Statuts E-Billing non payés
+
+Le callback authentifié met à jour une recharge en `failed`, `expired` ou `ambiguous` lorsque le statut confirmé par E-Billing correspond à la constante configurée. Aucun crédit ledger n'est créé et la réponse est HTTP 200. Un statut inconnu reste en HTTP 422. Les valeurs exactes doivent être confirmées par Digitech et renseignées dans `EBILLING_*_STATE`.
+
+Pour une recharge réelle, le numéro local commençant par 7 exige `airtelmoney` et celui commençant par 6 exige `moovmoney4`. SIMU reste disponible hors production et passe par les appels HTTP E-Billing mockés dans les tests.
