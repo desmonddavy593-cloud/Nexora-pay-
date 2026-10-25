@@ -20,6 +20,10 @@ Les variables complètes sont dans `.env.example`. Les secrets `JWT_SECRET`, `EB
 
 `EBILLING_CALLBACK_URL` doit être une URL HTTPS publique dont le paramètre `token` contient la même valeur privée que `EBILLING_WEBHOOK_SECRET`, par exemple `https://example.invalid/api/webhooks/ebilling?token=...`. Ne communiquez jamais cette URL complète dans un dépôt ou un ticket public. Le statut exact payé doit être fourni par Digitech via `EBILLING_PAID_STATE`; tant qu'il n'est pas renseigné, le webhook refuse de créditer.
 
+## Base de données Neon sur Vercel
+
+Vercel n'intègre pas PostgreSQL dans le plan Hobby. Depuis le Marketplace Vercel, ajoutez Neon au projet, puis récupérez la variable `DATABASE_URL` fournie par Neon en conservant `sslmode=require`. Dans le SQL Editor de Neon, exécutez le contenu de `db/migrations/001_initial.sql`. Cette migration doit être exécutée une seule fois pour la base du projet.
+
 ## Tests
 
 `npm test` couvre les frais, le solde ledger, le minimum, la normalisation, l'authentification du webhook, le démarrage production sans JWT, et vérifie que le scénario SIMU passe réellement par les appels HTTP E-Billing mockés. Le paiement LAB réel et la valeur du statut payé dépendent encore de Digitech.
