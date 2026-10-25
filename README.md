@@ -40,6 +40,35 @@ L'utilisateur paie `montant + frais` à E-Billing. Le portefeuille est crédité
 
 Connecter `desmonddavy593-cloud/Nexora-pay-` sur `main`, ajouter PostgreSQL, appliquer la migration SQL, puis renseigner les variables privées de `.env.example`. Utiliser `npm start` et vérifier `/health`. Conserver les URLs LAB et `SHAP_ENABLED=false` jusqu'à validation Digitech.
 
+## Déploiement Vercel
+
+Importer le dépôt `desmonddavy593-cloud/Nexora-pay-` sur Vercel et déployer la branche `main`. Dans `Settings > Environment Variables`, saisir les variables suivantes, avec leurs valeurs LAB ou leurs secrets privés respectifs, sans les committer dans le dépôt :
+
+```text
+NODE_ENV
+PORT
+DATABASE_URL
+JWT_SECRET
+FRAIS_TAUX
+FRAIS_MINIMUM
+EBILLING_BASE_URL
+EBILLING_CLIENT_ID
+EBILLING_CLIENT_SECRET
+EBILLING_TOKEN_URL
+EBILLING_CALLBACK_URL
+EBILLING_WEBHOOK_SECRET
+EBILLING_PAID_STATE
+EBILLING_FAILED_STATE
+EBILLING_EXPIRED_STATE
+EBILLING_AMBIGUOUS_STATE
+SHAP_ENABLED
+SHAP_BASE_URL
+SHAP_API_ID
+SHAP_API_SECRET
+```
+
+`EBILLING_CALLBACK_URL` doit être enregistrée dans le profil LAB avec cette forme : `https://<projet>.vercel.app/api/webhooks/ebilling?token=<EBILLING_WEBHOOK_SECRET>`. La valeur de `NODE_ENV` doit être `staging` pour le test LAB. Le plan Vercel Hobby est réservé à un usage non commercial.
+
 ## État de l'intégration
 
 Les appels OAuth2 E-Billing et SHAP sont isolés dans `src/providers.js`. Aucun succès n'est simulé par l'interface. Les webhooks exigent le secret privé, vérifient la facture auprès d'E-Billing et créditent une seule fois. Les retraits débitent le ledger avant l'appel SHAP et créent une régularisation en cas d'échec. TODO : confirmation du statut payé et éventuel format de signature Digitech, KYC et grille tarifaire réelle.
