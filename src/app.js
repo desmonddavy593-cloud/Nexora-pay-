@@ -11,6 +11,7 @@ const { hashPassword, verifyPassword, issueToken, setSession, requireAuth, recor
 const { createBill, ussdPush, getBill, shapPayout } = require('./providers');
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(helmet());
 app.use(express.json());
 app.use(cookieParser());
