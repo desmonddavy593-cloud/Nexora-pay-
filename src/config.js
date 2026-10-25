@@ -11,9 +11,14 @@ const COUNTRIES = Object.freeze({
   GN: { name: 'Guinée', dialCode: '224', localLength: 9 },
   UG: { name: 'Ouganda', dialCode: '256', localLength: 9 }
 });
+
 const MIN_AMOUNT = 100;
 const FEES_RATE = Number(process.env.FRAIS_TAUX || 0.01);
 const MIN_FEES = Number(process.env.FRAIS_MINIMUM || 100);
+// TODO: confirmer auprès de Digitech la valeur exacte du statut payé en LAB/PROD.
+// Le webhook refuse toute valeur tant que cette variable n'est pas configurée.
+const EBILLING_PAID_STATE = process.env.EBILLING_PAID_STATE || 'TODO_CONFIGURE_PAID_STATE';
+
 function countryByCode(code) { return COUNTRIES[code]; }
 function normalizePhone(countryCode, local) {
   const country = countryByCode(countryCode);
@@ -23,4 +28,5 @@ function normalizePhone(countryCode, local) {
 }
 function toProviderMsisdn(international) { return `0${international.replace(/^\+\d{3}/, '')}`; }
 function calculateFees(amount) { return Math.max(MIN_FEES, Math.ceil(Number(amount) * FEES_RATE)); }
-module.exports = { COUNTRIES, MIN_AMOUNT, FEES_RATE, MIN_FEES, normalizePhone, toProviderMsisdn, calculateFees };
+
+module.exports = { COUNTRIES, MIN_AMOUNT, FEES_RATE, MIN_FEES, EBILLING_PAID_STATE, normalizePhone, toProviderMsisdn, calculateFees };
