@@ -5,7 +5,7 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const { v4: uuid } = require('uuid');
-const { COUNTRIES, normalizePhone, toProviderMsisdn, calculateFees, MIN_AMOUNT, EBILLING_PAID_STATE } = require('./config');
+const { COUNTRIES, normalizePhone, toProviderMsisdn, calculateFees, MIN_AMOUNT, EBILLING_PAID_STATE, EBILLING_FAILED_STATE, EBILLING_EXPIRED_STATE, EBILLING_AMBIGUOUS_STATE, assertPaymentSystemMatches } = require('./config');
 const { query, withTransaction } = require('./db');
 const { hashPassword, verifyPassword, issueToken, setSession, requireAuth, recordAttempt, isLocked } = require('./auth');
 const { createBill, ussdPush, getBill, shapPayout } = require('./providers');
@@ -36,11 +36,12 @@ app.post('/api/auth/login', authLimiter, [body('password').isString().isLength({
   try {
     let phone = req.body.telephone;
     if (phone && /^\d+$/.test(phone) && req.body.pays) phone = normalizePhone(req.body.pays, phone);
-    if (phone && await isLocked(phone)) return res.status(429).json({ error: 'Trop de tentatives. Réessayez dans 15 minutes.' });
-    const result = await query('SELECT * FROM users WHERE telephone_international=$1 OR email=$1', [phone || req.body.email]);
+    const loginKey = phone || String(req.body.email || '').toLowerCase();
+    if (loginKey && await isLocked(loginKey)) return res.status(429).json({ error: 'Trop de tentatives. Réessayez dans 15 minutes.' });
+    const result = await query('SELECT * FROM users WHERE telephone_international=$1 OR lower(email)=lower($1)', [loginKey]);
     const user = result.rows[0];
     const validPassword = user && await verifyPassword(req.body.password, user.mot_de_passe_hash);
-    if (phone) await recordAttempt(phone, !!validPassword);
+    if (loginKey) await recordAttempt(loginKey, !!validPassword);
     if (!validPassword) return res.status(401).json({ error: 'Identifiants invalides' });
     setSession(res, issueToken(user));
     return res.json({ user: { id: user.id, nom: user.nom, pays: user.pays, telephone_international: user.telephone_international, email: user.email } });
@@ -60,8 +61,8 @@ app.post('/api/transfers', requireAuth, [body('recipientId').isUUID(), body('amo
     const reference = req.body.reference || uuid();
     const fees = calculateFees(req.body.amount);
     const result = await withTransaction(async (client) => {
-      if ((await client.query('SELECT reference FROM ledger WHERE reference=$1', [reference])).rows.length) return { idempotent: true };
       await client.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [req.user.sub]);
+      if ((await client.query('SELECT reference FROM ledger WHERE reference=$1', [reference])).rows.length) return { idempotent: true };
       const balance = await client.query("SELECT COALESCE(SUM(CASE WHEN sens='credit' THEN montant ELSE -montant END),0)::int AS solde FROM ledger WHERE user_id=$1 AND statut='posted'", [req.user.sub]);
       if (Number(balance.rows[0].solde) < Number(req.body.amount) + fees) throw Object.assign(new Error('Solde insuffisant'), { status: 422 });
       if (!(await client.query('SELECT id FROM users WHERE id=$1', [req.body.recipientId])).rows.length) throw Object.assign(new Error('Destinataire introuvable'), { status: 404 });
@@ -79,6 +80,7 @@ app.post('/api/recharges', requireAuth, [body('amount').isInt({ min: MIN_AMOUNT 
     if (req.body.paymentSystem === 'SIMU' && process.env.NODE_ENV === 'production') return res.status(400).json({ error: 'SIMU est interdit en production' });
     const user = (await query('SELECT * FROM users WHERE id=$1', [req.user.sub])).rows[0];
     if (!user.email) return res.status(400).json({ error: 'Ajoutez une adresse email à votre compte pour recharger' });
+    if (req.body.paymentSystem !== 'SIMU') assertPaymentSystemMatches(user.telephone_international, req.body.paymentSystem);
     const reference = uuid();
     const fees = calculateFees(req.body.amount);
     const grossAmount = Number(req.body.amount) + fees;
@@ -104,7 +106,13 @@ app.post('/api/webhooks/ebilling', async (req, res) => {
       const billId = bill.bill_id || bill.e_bill?.bill_id || bill.id;
       const billStatus = bill.status || bill.state;
       const billAmount = bill.amount ?? bill.e_bill?.amount;
-      if (String(billId) !== String(recharge.ebilling_bill_id) || Number(billAmount) !== Number(recharge.montant) + Number(recharge.frais) || billStatus !== EBILLING_PAID_STATE) throw Object.assign(new Error('Facture E-Billing non payée ou incohérente'), { status: 422 });
+      if (String(billId) !== String(recharge.ebilling_bill_id) || Number(billAmount) !== Number(recharge.montant) + Number(recharge.frais)) throw Object.assign(new Error('Facture E-Billing incohérente'), { status: 422 });
+      const terminalStatuses = new Map([[EBILLING_FAILED_STATE, 'failed'], [EBILLING_EXPIRED_STATE, 'expired'], [EBILLING_AMBIGUOUS_STATE, 'ambiguous']]);
+      if (terminalStatuses.has(billStatus)) {
+        await client.query('UPDATE recharges SET statut=$1 WHERE reference=$2', [terminalStatuses.get(billStatus), reference]);
+        return { status: terminalStatuses.get(billStatus) };
+      }
+      if (billStatus !== EBILLING_PAID_STATE) throw Object.assign(new Error('Facture E-Billing non payée ou statut inconnu'), { status: 422 });
       await client.query("INSERT INTO ledger(user_id,sens,montant,type,reference) VALUES($1,'credit',$2,'recharge',$3)", [recharge.user_id, recharge.montant, reference]);
       await client.query("UPDATE recharges SET statut='paid',paid_at=now() WHERE reference=$1", [reference]);
       return { paid: true };

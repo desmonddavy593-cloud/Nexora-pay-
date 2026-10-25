@@ -15,9 +15,11 @@ const COUNTRIES = Object.freeze({
 const MIN_AMOUNT = 100;
 const FEES_RATE = Number(process.env.FRAIS_TAUX || 0.01);
 const MIN_FEES = Number(process.env.FRAIS_MINIMUM || 100);
-// TODO: confirmer auprès de Digitech la valeur exacte du statut payé en LAB/PROD.
-// Le webhook refuse toute valeur tant que cette variable n'est pas configurée.
+// TODO: confirmer auprès de Digitech la valeur exacte des statuts E-Billing en LAB/PROD.
 const EBILLING_PAID_STATE = process.env.EBILLING_PAID_STATE || 'TODO_CONFIGURE_PAID_STATE';
+const EBILLING_FAILED_STATE = process.env.EBILLING_FAILED_STATE || 'TODO_CONFIGURE_FAILED_STATE';
+const EBILLING_EXPIRED_STATE = process.env.EBILLING_EXPIRED_STATE || 'TODO_CONFIGURE_EXPIRED_STATE';
+const EBILLING_AMBIGUOUS_STATE = process.env.EBILLING_AMBIGUOUS_STATE || 'TODO_CONFIGURE_AMBIGUOUS_STATE';
 
 function countryByCode(code) { return COUNTRIES[code]; }
 function normalizePhone(countryCode, local) {
@@ -28,5 +30,15 @@ function normalizePhone(countryCode, local) {
 }
 function toProviderMsisdn(international) { return `0${international.replace(/^\+\d{3}/, '')}`; }
 function calculateFees(amount) { return Math.max(MIN_FEES, Math.ceil(Number(amount) * FEES_RATE)); }
+function expectedPaymentSystem(international) {
+  const msisdn = toProviderMsisdn(international);
+  if (msisdn.startsWith('07')) return 'airtelmoney';
+  if (msisdn.startsWith('06')) return 'moovmoney4';
+  return null;
+}
+function assertPaymentSystemMatches(international, paymentSystem) {
+  const expected = expectedPaymentSystem(international);
+  if (expected && paymentSystem !== expected) throw new Error(`Opérateur incohérent : ce numéro nécessite ${expected}`);
+}
 
-module.exports = { COUNTRIES, MIN_AMOUNT, FEES_RATE, MIN_FEES, EBILLING_PAID_STATE, normalizePhone, toProviderMsisdn, calculateFees };
+module.exports = { COUNTRIES, MIN_AMOUNT, FEES_RATE, MIN_FEES, EBILLING_PAID_STATE, EBILLING_FAILED_STATE, EBILLING_EXPIRED_STATE, EBILLING_AMBIGUOUS_STATE, normalizePhone, toProviderMsisdn, calculateFees, expectedPaymentSystem, assertPaymentSystemMatches };
