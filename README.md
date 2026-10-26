@@ -78,3 +78,13 @@ Les appels OAuth2 E-Billing et SHAP sont isolés dans `src/providers.js`. Aucun 
 Le callback authentifié met à jour une recharge en `failed`, `expired` ou `ambiguous` lorsque le statut confirmé par E-Billing correspond à la constante configurée. Aucun crédit ledger n'est créé et la réponse est HTTP 200. Un statut inconnu reste en HTTP 422. Les valeurs exactes doivent être confirmées par Digitech et renseignées dans `EBILLING_*_STATE`.
 
 Pour une recharge réelle, le numéro local commençant par 7 exige `airtelmoney` et celui commençant par 6 exige `moovmoney4`. SIMU reste disponible hors production et passe par les appels HTTP E-Billing mockés dans les tests.
+
+## Refonte visuelle
+
+La palette centralisée dans `public/style.css` utilise le bleu principal `#2563EB`, le bleu foncé `#1D4ED8`, le turquoise d’accent `#14B8A6`, le fond `#F8FAFC`, les surfaces `#FFFFFF`, le texte `#0F172A`, le texte secondaire `#475569`, le succès `#047857`, l’erreur `#B91C1C` et l’avertissement `#92400E`. Les contrastes ont été choisis pour conserver une lecture claire sur mobile et desktop.
+
+Captures de validation :
+
+- Accueil : [desktop](docs/screenshots/index-desktop.png) · [mobile](docs/screenshots/index-mobile.png)
+- Inscription : [desktop](docs/screenshots/inscription-desktop.png) · [mobile](docs/screenshots/inscription-mobile.png)
+- Portefeuille : [desktop](docs/screenshots/portefeuille-desktop.png) · [mobile](docs/screenshots/portefeuille-mobile.png)

@@ -18,36 +18,55 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
-const valid = (req, res, next) => { const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ error: 'Données invalides' }); return next(); };
+const valid = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const path = errors.array()[0].path;
+    const messages = {
+      telephone: 'Le numéro doit contenir 8 chiffres sans le 0, commençant par 6 ou 7',
+      password: 'Le mot de passe doit contenir au moins 8 caractères',
+      terms: 'Veuillez accepter les conditions'
+    };
+    return res.status(400).json({ error: messages[path] || 'Les informations saisies sont invalides' });
+  }
+  return next();
+};
 const sameSecret = (provided, expected) => { if (!provided || !expected) return false; const a = Buffer.from(provided); const b = Buffer.from(expected); return a.length === b.length && crypto.timingSafeEqual(a, b); };
 
 app.get('/health', (req, res) => res.json({ status: 'ok', environment: process.env.NODE_ENV || 'development' }));
 app.get('/api/countries', (req, res) => res.json(COUNTRIES));
 
-app.post('/api/auth/register', [body('nom').trim().isLength({ min: 2, max: 100 }), body('pays').isIn(Object.keys(COUNTRIES)), body('telephone').isNumeric(), body('password').isLength({ min: 8, max: 100 }), body('email').optional({ values: 'falsy' }).isEmail(), valid], async (req, res) => {
+app.post('/api/auth/register', [body('nom').trim().isLength({ min: 2, max: 100 }), body('pays').isIn(Object.keys(COUNTRIES)), body('telephone').isString().notEmpty(), body('password').isLength({ min: 8, max: 100 }), body('terms').equals('on'), body('email').optional({ values: 'falsy' }).isEmail(), valid], async (req, res) => {
   try {
     const phone = normalizePhone(req.body.pays, req.body.telephone);
     const hash = await hashPassword(req.body.password);
     const result = await query('INSERT INTO users(nom,pays,telephone_international,email,mot_de_passe_hash) VALUES($1,$2,$3,$4,$5) RETURNING id,nom,pays,telephone_international,email', [req.body.nom, req.body.pays, phone, req.body.email || null, hash]);
     setSession(res, issueToken(result.rows[0]));
     return res.status(201).json({ user: result.rows[0] });
-  } catch (error) { return res.status(400).json({ error: error.code === '23505' ? 'Compte déjà existant' : 'Inscription impossible' }); }
+  } catch (error) {
+    if (error.code === '23505') return res.status(400).json({ error: 'Un compte existe déjà avec ce numéro' });
+    if (error.message && error.message.startsWith('Le numéro doit')) return res.status(400).json({ error: error.message });
+    return res.status(500).json({ error: 'Une erreur est survenue, réessayez dans un instant' });
+  }
 });
 
 app.post('/api/auth/login', authLimiter, [body('password').isString().isLength({ min: 1 }), body('telephone').optional().isString(), body('email').optional().isEmail(), valid], async (req, res) => {
   try {
     let phone = req.body.telephone;
-    if (phone && /^\d+$/.test(phone) && req.body.pays) phone = normalizePhone(req.body.pays, phone);
+    if (phone && req.body.pays) phone = normalizePhone(req.body.pays, phone);
     const loginKey = phone || String(req.body.email || '').toLowerCase();
     if (loginKey && await isLocked(loginKey)) return res.status(429).json({ error: 'Trop de tentatives. Réessayez dans 15 minutes.' });
     const result = await query('SELECT * FROM users WHERE telephone_international=$1 OR lower(email)=lower($1)', [loginKey]);
     const user = result.rows[0];
     const validPassword = user && await verifyPassword(req.body.password, user.mot_de_passe_hash);
     if (loginKey) await recordAttempt(loginKey, !!validPassword);
-    if (!validPassword) return res.status(401).json({ error: 'Identifiants invalides' });
+    if (!validPassword) return res.status(401).json({ error: 'Numéro ou mot de passe incorrect' });
     setSession(res, issueToken(user));
     return res.json({ user: { id: user.id, nom: user.nom, pays: user.pays, telephone_international: user.telephone_international, email: user.email } });
-  } catch { return res.status(401).json({ error: 'Identifiants invalides' }); }
+  } catch (error) {
+    if (error.message && error.message.startsWith('Le numéro doit')) return res.status(400).json({ error: error.message });
+    return res.status(401).json({ error: 'Numéro ou mot de passe incorrect' });
+  }
 });
 app.post('/api/auth/logout', (req, res) => { res.clearCookie('nexora_session'); return res.status(204).end(); });
 app.get('/api/me', requireAuth, async (req, res) => { const result = await query('SELECT id,nom,pays,telephone_international,email FROM users WHERE id=$1', [req.user.sub]); return res.json({ user: result.rows[0] }); });
