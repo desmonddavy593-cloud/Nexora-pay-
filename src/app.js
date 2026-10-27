@@ -17,6 +17,10 @@ app.use(helmet());
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use((req, res, next) => {
+  res.on('finish', () => console.log(`${req.method} ${req.path} ${res.statusCode}`));
+  next();
+});
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, standardHeaders: true, legacyHeaders: false });
 const valid = (req, res, next) => {
   const errors = validationResult(req);
@@ -44,6 +48,7 @@ app.post('/api/auth/register', [body('nom').trim().isLength({ min: 2, max: 100 }
     setSession(res, issueToken(result.rows[0]));
     return res.status(201).json({ user: result.rows[0] });
   } catch (error) {
+    console.error(`[auth/register] code=${error.code || 'N/A'} message=${error.message}`);
     if (error.code === '23505') return res.status(400).json({ error: 'Un compte existe déjà avec ce numéro' });
     if (error.message && error.message.startsWith('Le numéro doit')) return res.status(400).json({ error: error.message });
     return res.status(500).json({ error: 'Une erreur est survenue, réessayez dans un instant' });
@@ -64,6 +69,7 @@ app.post('/api/auth/login', authLimiter, [body('password').isString().isLength({
     setSession(res, issueToken(user));
     return res.json({ user: { id: user.id, nom: user.nom, pays: user.pays, telephone_international: user.telephone_international, email: user.email } });
   } catch (error) {
+    console.error(`[auth/login] code=${error.code || 'N/A'} message=${error.message}`);
     if (error.message && error.message.startsWith('Le numéro doit')) return res.status(400).json({ error: error.message });
     return res.status(401).json({ error: 'Numéro ou mot de passe incorrect' });
   }
