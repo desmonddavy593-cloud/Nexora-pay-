@@ -1,4 +1,6 @@
 const $=s=>document.querySelector(s);const $$=s=>[...document.querySelectorAll(s)];
+function cleanSensitiveQuery(){const keys=[...new URLSearchParams(location.search).keys()].map(key=>key.toLowerCase());if(keys.includes('password')||keys.includes('telephone')||keys.includes('pays')||keys.includes('mot_de_passe'))history.replaceState(null,'',location.pathname)}
+cleanSensitiveQuery();
 async function api(url,options={}){const response=await fetch(url,{headers:{'Content-Type':'application/json',...(options.headers||{})},...options});const data=response.status===204?{}:await response.json().catch(()=>({error:'Une erreur est survenue, réessayez dans un instant'}));if(!response.ok){const error=new Error(data.error||'Une erreur est survenue, réessayez dans un instant');error.status=response.status;throw error}return data}
 function showError(error,target=$('.error')){if(target){target.textContent=error.message||'Une erreur est survenue, réessayez dans un instant';target.setAttribute('role','alert');target.scrollIntoView({behavior:'smooth',block:'center'})}}
 function cleanPhone(value){return String(value||'').replace(/[\s-]/g,'')}

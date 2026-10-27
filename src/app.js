@@ -13,6 +13,12 @@ const { createBill, ussdPush, getBill, shapPayout } = require('./providers');
 
 const app = express();
 app.set('trust proxy', 1);
+app.use((req, res, next) => {
+  const sensitiveKeys = Object.keys(req.query || {}).map(key => key.toLowerCase());
+  if (sensitiveKeys.includes('password') || sensitiveKeys.includes('mot_de_passe')) return res.status(400).json({ error: 'Requête invalide' });
+  return next();
+});
+app.use(['/connexion.html', '/inscription.html'], (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(helmet());
 app.use(express.json());
 app.use(cookieParser());

@@ -11,4 +11,19 @@ describe('API publique', () => {
     const response = await request(app).post('/api/webhooks/ebilling').send({ reference: 'missing', amount: 100 });
     expect(response.status).toBe(401);
   });
+  test('rejette une query string contenant un mot de passe sans la journaliser', async () => {
+    const logger = jest.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const response = await request(app).get('/connexion.html?password=x');
+      expect(response.status).toBe(400);
+      expect(response.body).toEqual({ error: 'Requête invalide' });
+      expect(logger).not.toHaveBeenCalledWith(expect.stringContaining('/connexion.html'));
+    } finally {
+      logger.mockRestore();
+    }
+  });
+  test('ne met pas en cache les pages d’authentification', async () => {
+    const response = await request(app).get('/connexion.html');
+    expect(response.headers['cache-control']).toBe('no-store');
+  });
 });
