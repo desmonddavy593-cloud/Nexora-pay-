@@ -6,7 +6,7 @@ const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const { body, validationResult } = require('express-validator');
 const { v4: uuid } = require('uuid');
-const { COUNTRIES, normalizePhone, toProviderMsisdn, calculateFees, MIN_AMOUNT, EBILLING_PAID_STATE, EBILLING_FAILED_STATE, EBILLING_EXPIRED_STATE, EBILLING_AMBIGUOUS_STATE, assertPaymentSystemMatches } = require('./config');
+const { COUNTRIES, normalizePhone, toProviderMsisdn, calculateFees, MIN_AMOUNT, EBILLING_PAID_STATE, EBILLING_FAILED_STATE, EBILLING_EXPIRED_STATE, EBILLING_AMBIGUOUS_STATE, assertPaymentSystemMatches, isSimuLabAllowed } = require('./config');
 const { query, withTransaction } = require('./db');
 const { hashPassword, verifyPassword, issueToken, setSession, requireAuth, recordAttempt, isLocked } = require('./auth');
 const { createBill, ussdPush, getBill, shapPayout } = require('./providers');
@@ -110,7 +110,7 @@ app.post('/api/transfers', requireAuth, [body('recipientId').isUUID(), body('amo
 
 app.post('/api/recharges', requireAuth, [body('amount').isInt({ min: MIN_AMOUNT }), body('paymentSystem').isIn(['airtelmoney', 'moovmoney4', 'SIMU']), valid], async (req, res) => {
   try {
-    if (req.body.paymentSystem === 'SIMU' && process.env.NODE_ENV === 'production') return res.status(400).json({ error: 'SIMU est interdit en production' });
+    if (req.body.paymentSystem === 'SIMU' && !isSimuLabAllowed()) return res.status(400).json({ error: 'SIMU est autorisé uniquement sur E-Billing LAB' });
     const user = (await query('SELECT * FROM users WHERE id=$1', [req.user.sub])).rows[0];
     if (!user.email) return res.status(400).json({ error: 'Ajoutez une adresse email à votre compte pour recharger' });
     if (req.body.paymentSystem !== 'SIMU') assertPaymentSystemMatches(user.telephone_international, req.body.paymentSystem);
@@ -127,6 +127,8 @@ app.post('/api/recharges', requireAuth, [body('amount').isInt({ min: MIN_AMOUNT 
 app.get('/api/recharges/:reference', requireAuth, async (req, res) => { const result = await query('SELECT reference,statut,montant,frais,(montant+frais) AS total,created_at,paid_at FROM recharges WHERE reference=$1 AND user_id=$2', [req.params.reference, req.user.sub]); if (!result.rows[0]) return res.status(404).json({ error: 'Recharge introuvable' }); return res.json(result.rows[0]); });
 
 app.post('/api/webhooks/ebilling', async (req, res) => {
+  const diagnosticStatus = req.body?.status ?? req.body?.state ?? req.body?.statut ?? null;
+  console.log('[webhook/ebilling] diagnostic', { fields: Object.keys(req.body || {}), status: diagnosticStatus, reference: req.body?.reference ?? null, billingid: req.body?.billingid ?? null, amount: req.body?.amount ?? null });
   if (!sameSecret(req.query.token, process.env.EBILLING_WEBHOOK_SECRET)) return res.status(401).json({ error: 'Webhook non autorisé' });
   const { reference, amount, billingid } = req.body;
   try {

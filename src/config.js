@@ -23,4 +23,5 @@ function toProviderMsisdn(international) { return `0${international.replace(/^\+
 function calculateFees(amount) { return Math.max(MIN_FEES, Math.ceil(Number(amount) * FEES_RATE)); }
 function expectedPaymentSystem(international) { const msisdn = toProviderMsisdn(international); if (msisdn.startsWith('07')) return 'airtelmoney'; if (msisdn.startsWith('06')) return 'moovmoney4'; return null; }
 function assertPaymentSystemMatches(international, paymentSystem) { const expected = expectedPaymentSystem(international); if (expected && paymentSystem !== expected) throw new Error(`Opérateur incohérent : ce numéro nécessite ${expected}`); }
-module.exports = { COUNTRIES, MIN_AMOUNT, FEES_RATE, MIN_FEES, EBILLING_PAID_STATE, EBILLING_FAILED_STATE, EBILLING_EXPIRED_STATE, EBILLING_AMBIGUOUS_STATE, normalizePhone, cleanLocalPhone, toProviderMsisdn, calculateFees, expectedPaymentSystem, assertPaymentSystemMatches };
+function isSimuLabAllowed(baseUrl = process.env.EBILLING_BASE_URL) { return String(baseUrl || '').includes('lab.billing-easy.net'); }
+module.exports = { COUNTRIES, MIN_AMOUNT, FEES_RATE, MIN_FEES, EBILLING_PAID_STATE, EBILLING_FAILED_STATE, EBILLING_EXPIRED_STATE, EBILLING_AMBIGUOUS_STATE, normalizePhone, cleanLocalPhone, toProviderMsisdn, calculateFees, expectedPaymentSystem, assertPaymentSystemMatches, isSimuLabAllowed };
