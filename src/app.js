@@ -126,11 +126,11 @@ app.post('/api/recharges', requireAuth, [body('amount').isInt({ min: MIN_AMOUNT 
 });
 app.get('/api/recharges/:reference', requireAuth, async (req, res) => { const result = await query('SELECT reference,statut,montant,frais,(montant+frais) AS total,created_at,paid_at FROM recharges WHERE reference=$1 AND user_id=$2', [req.params.reference, req.user.sub]); if (!result.rows[0]) return res.status(404).json({ error: 'Recharge introuvable' }); return res.json(result.rows[0]); });
 
-app.post('/api/webhooks/ebilling', async (req, res) => {
-  const diagnosticStatus = req.body?.status ?? req.body?.state ?? req.body?.statut ?? null;
-  console.log('[webhook/ebilling] diagnostic', { fields: Object.keys(req.body || {}), status: diagnosticStatus, reference: req.body?.reference ?? null, billingid: req.body?.billingid ?? null, amount: req.body?.amount ?? null });
-  if (!sameSecret(req.query.token, process.env.EBILLING_WEBHOOK_SECRET)) return res.status(401).json({ error: 'Webhook non autorisé' });
-  const { reference, amount, billingid } = req.body;
+app.all('/api/webhooks/ebilling', async (req, res, next) => {
+  if (!['GET', 'POST'].includes(req.method)) return next();
+  const payload = { ...req.query, ...(req.body && typeof req.body === 'object' ? req.body : {}) };
+  if (!sameSecret(payload.token, process.env.EBILLING_WEBHOOK_SECRET)) return res.status(401).json({ error: 'Webhook non autorisé' });
+  const { reference, amount, billingid } = payload;
   try {
     const result = await withTransaction(async (client) => {
       const recharge = (await client.query('SELECT * FROM recharges WHERE reference=$1 FOR UPDATE', [reference])).rows[0];
@@ -147,7 +147,10 @@ app.post('/api/webhooks/ebilling', async (req, res) => {
         await client.query('UPDATE recharges SET statut=$1 WHERE reference=$2', [terminalStatuses.get(billStatus), reference]);
         return { status: terminalStatuses.get(billStatus) };
       }
-      if (billStatus !== EBILLING_PAID_STATE) throw Object.assign(new Error('Facture E-Billing non payée ou statut inconnu'), { status: 422 });
+      if (billStatus !== EBILLING_PAID_STATE) {
+        console.warn('[webhook/ebilling] statut inconnu', { name: 'status', value: billStatus });
+        throw Object.assign(new Error('Facture E-Billing non payée ou statut inconnu'), { status: 422 });
+      }
       await client.query("INSERT INTO ledger(user_id,sens,montant,type,reference) VALUES($1,'credit',$2,'recharge',$3)", [recharge.user_id, recharge.montant, reference]);
       await client.query("UPDATE recharges SET statut='paid',paid_at=now() WHERE reference=$1", [reference]);
       return { paid: true };

@@ -9,6 +9,7 @@ process.env.EBILLING_AMBIGUOUS_STATE = 'ambiguous';
 
 const mockProvider = { getBill: jest.fn() };
 const mockClient = { query: jest.fn() };
+let rechargeStatus;
 jest.mock('../src/providers', () => ({ createBill: jest.fn(), ussdPush: jest.fn(), getBill: (...args) => mockProvider.getBill(...args), shapPayout: jest.fn() }));
 jest.mock('../src/db', () => ({ query: jest.fn(), withTransaction: jest.fn(async callback => callback(mockClient)) }));
 
@@ -16,41 +17,67 @@ const app = require('../src/app');
 const db = require('../src/db');
 
 beforeEach(() => {
+  rechargeStatus = 'pending';
   mockProvider.getBill.mockReset();
   mockClient.query.mockReset();
   mockClient.query.mockImplementation(async (sql) => {
-    if (sql.startsWith('SELECT * FROM recharges')) return { rows: [{ reference: 'ref-1', ebilling_bill_id: 'bill-1', montant: 100, frais: 100, user_id: 'user-1', statut: 'pending' }] };
+    if (sql.startsWith('SELECT * FROM recharges')) return { rows: [{ reference: 'ref-1', ebilling_bill_id: 'bill-1', montant: 100, frais: 100, user_id: 'user-1', statut: rechargeStatus }] };
+    if (sql.startsWith("UPDATE recharges SET statut='paid'")) { rechargeStatus = 'paid'; return { rows: [] }; }
     if (sql.startsWith('UPDATE recharges')) return { rows: [] };
-    if (sql.startsWith('INSERT INTO ledger')) throw new Error('Le callback non payé ne doit jamais créditer le ledger');
     return { rows: [] };
   });
   db.query.mockReset();
 });
 
-async function callback(status) {
+async function callback(status, method = 'post', payload = {}) {
   mockProvider.getBill.mockResolvedValue({ bill_id: 'bill-1', amount: 200, status });
-  return request(app).post('/api/webhooks/ebilling?token=test-webhook-secret').send({ reference: 'ref-1', billingid: 'bill-1', amount: 200 });
+  const data = { reference: 'ref-1', billingid: 'bill-1', amount: 200, ...payload };
+  const call = request(app)[method]('/api/webhooks/ebilling?token=test-webhook-secret');
+  return method === 'get' ? call.query(data) : call.send(data);
 }
 
-test('le diagnostic webhook capture le statut reçu sans exposer le token', async () => {
-  mockProvider.getBill.mockResolvedValue({ bill_id: 'bill-1', amount: 200, status: 'failed' });
-  const logger = jest.spyOn(console, 'log').mockImplementation(() => {});
+test('un statut E-Billing inconnu journalise uniquement son nom et sa valeur', async () => {
+  const logger = jest.spyOn(console, 'warn').mockImplementation(() => {});
   try {
-    const response = await request(app).post('/api/webhooks/ebilling?token=test-webhook-secret').send({ reference: 'ref-1', billingid: 'bill-1', amount: 200, status: 'provider_status' });
-    expect(response.status).toBe(200);
-    expect(logger).toHaveBeenCalledWith('[webhook/ebilling] diagnostic', { fields: ['reference', 'billingid', 'amount', 'status'], status: 'provider_status', reference: 'ref-1', billingid: 'bill-1', amount: 200 });
+    const response = await callback('provider_status_unknown');
+    expect(response.status).toBe(422);
+    expect(logger).toHaveBeenCalledWith('[webhook/ebilling] statut inconnu', { name: 'status', value: 'provider_status_unknown' });
     expect(logger.mock.calls.flat().join(' ')).not.toContain('test-webhook-secret');
   } finally {
     logger.mockRestore();
   }
 });
 
-test('le diagnostic webhook ne journalise que les champs autorisés', async () => {
-  const logger = jest.spyOn(console, 'log').mockImplementation(() => {});
+test('un callback GET valide crédite une fois', async () => {
+  const response = await callback('paid', 'get');
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({ paid: true });
+  expect(mockClient.query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO ledger')).length).toBe(1);
+});
+
+test('un GET sans token valide renvoie 401', async () => {
+  const response = await request(app).get('/api/webhooks/ebilling').query({ reference: 'ref-1', billingid: 'bill-1', amount: 200 });
+  expect(response.status).toBe(401);
+});
+
+test('un GET et un POST identiques ne créditent qu’une seule fois', async () => {
+  const first = await callback('paid', 'get');
+  const second = await callback('paid', 'post');
+  expect(first.status).toBe(200);
+  expect(second.status).toBe(200);
+  expect(second.body).toEqual({ idempotent: true });
+  expect(mockClient.query.mock.calls.filter(([sql]) => sql.startsWith('INSERT INTO ledger')).length).toBe(1);
+  expect(mockProvider.getBill).toHaveBeenCalledTimes(1);
+});
+
+test('les valeurs du body priment sur celles de la query', async () => {
+  const logger = jest.spyOn(console, 'warn').mockImplementation(() => {});
   try {
-    await callback('failed');
-    expect(logger).toHaveBeenCalledWith('[webhook/ebilling] diagnostic', { fields: ['reference', 'billingid', 'amount'], status: null, reference: 'ref-1', billingid: 'bill-1', amount: 200 });
-    expect(logger.mock.calls.flat().join(' ')).not.toContain('test-webhook-secret');
+    mockProvider.getBill.mockResolvedValue({ bill_id: 'bill-1', amount: 200, status: 'provider_status_unknown' });
+    const response = await request(app).post('/api/webhooks/ebilling?token=wrong-token&reference=wrong-ref&billingid=wrong-bill&amount=999')
+      .send({ token: 'test-webhook-secret', reference: 'ref-1', billingid: 'bill-1', amount: 200 });
+    expect(response.status).toBe(422);
+    expect(mockProvider.getBill).toHaveBeenCalledWith('bill-1');
   } finally {
     logger.mockRestore();
   }
